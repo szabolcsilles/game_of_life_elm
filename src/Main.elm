@@ -22,6 +22,7 @@ type alias Model = {
         status : Status
         , board : Board
         , world : World
+        , framePerSecond : Float
     }
 
 type alias Board = {
@@ -90,13 +91,16 @@ withLivingAt x y world =
     let
         idx = calculateIndex world x y
     in
-        {world | cells = (A.set idx Alive world.cells)}
+        {world | cells = A.set idx Alive world.cells}
 
 countLivingNeighbours : World -> Int -> Int -> Int
 countLivingNeighbours world x y =
     getNeighbours world x y
-    |> List.filter (\c -> c == Alive)
+    |> List.filter isCellAlive
     |> List.length
+
+isCellAlive : Cell -> Bool
+isCellAlive cell = cell == Alive
 
 getNeighbours : World -> Int -> Int -> (List Cell)
 getNeighbours world x y = 
@@ -116,10 +120,12 @@ getNeighbours world x y =
         ]
 
 getCellAt : World -> Location -> Cell
-getCellAt world loc = 
-    M.withDefault 
-        Dead 
-        (A.get (calculateIndexOfLocation world loc) world.cells)
+getCellAt world loc =
+    let
+        idx = calculateIndexOfLocation world loc
+        maybeCell = A.get idx world.cells
+    in
+        M.withDefault Dead maybeCell
 
 rightNeighbour : World -> Location -> Location
 rightNeighbour world loc = normalizeLocation world {x = loc.x + 1, y = loc.y} 
@@ -150,14 +156,18 @@ nextGeneration currentGen =
     let
         newWidth = currentGen.width
         newHeight = currentGen.height
-        newCells = (nextGenerationCells currentGen)
+        newCells = nextGenerationCells currentGen
     in
         {width = newWidth, height = newHeight, cells = newCells}
 
 nextGenerationCells : World -> (A.Array Cell)
 nextGenerationCells currentWorld =
-    List.range 0 (A.length currentWorld.cells)
-    |> List.map (fate currentWorld)
+    let
+        cellNum = A.length currentWorld.cells
+        fateWithCurrentWorld = fate currentWorld
+    in
+    List.range 0 cellNum
+    |> List.map fateWithCurrentWorld
     |> A.fromList
     
 
@@ -191,17 +201,23 @@ main = Browser.document {
 init : () -> (Model, Cmd Msg)
 init _ = 
     let
-        xRatio = 16
+        xRatio = 18
         yRatio = 9
-        resolutionMultiplier = 120
-        marginMultipier = 20
-        worldMultiplier = 10
+        boardHeight = yRatio * (120 - 20)
+        boardWith = round <| xRatio/yRatio * (toFloat boardHeight)
+        worldColumns = xRatio * 10
+        worldRows = yRatio * 10
     in
     (
         {
             status = Stopped
-            , board = { width = (xRatio * (resolutionMultiplier - marginMultipier)), height = (yRatio * (resolutionMultiplier - marginMultipier))}
-            , world = (createWorld (xRatio * worldMultiplier) (yRatio * worldMultiplier))
+            , board = 
+                { 
+                    width = boardWith
+                    , height = boardHeight
+                }
+            , world = createWorld worldColumns worldRows
+            , framePerSecond = 6.0
         }
         , Cmd.none
     )
@@ -215,18 +231,25 @@ view model = {
 
 viewBoard : Model -> Html Msg
 viewBoard model =
+    let
+        widthStr = fromInt model.board.width
+        heightStr = fromInt model.board.height
+        worldList = viewWorld model.board model.world
+    in
     S.svg 
-        [ SA.width (fromInt model.board.width), SA.height (fromInt model.board.height)] 
-        (L.append (viewWorld model.board model.world) [text "not supported"])
+        [ SA.width widthStr, SA.height heightStr] 
+        <| worldList ++ [text "not supported"]
 
 viewWorld : Board -> World -> List (S.Svg Msg)
 viewWorld board world =
     let
         cWidth = cellWidth board world
         cHeight = cellHeight board world
+        cellNum = A.length world.cells
+        viewCellWithWorldAndCellSize = viewCellAtIndex world cWidth cHeight
     in
-        List.range 0 (A.length world.cells)
-        |> List.map (viewCellAtIndex world cWidth cHeight)
+        List.range 0 cellNum
+        |> List.map viewCellWithWorldAndCellSize
 
 
 viewCellAtIndex : World -> Int -> Int -> Int -> S.Svg Msg
@@ -274,7 +297,7 @@ viewBody model =
             , Attr.style "margin-right" "auto"
             , Attr.style "margin-bottom" ".5rem"
             , Attr.style "margin-top" ".2rem"
-            , Attr.style "width" (String.append widthStr "px")
+            , Attr.style "width" <| widthStr ++ "px"
             ]
             [
             button [Attr.style "margin-right" ".2rem", onClick Generate] [text "Randomize"]
@@ -286,7 +309,7 @@ viewBody model =
             [
             Attr.style "margin-left" "auto"
             , Attr.style "margin-right" "auto"
-            , Attr.style "width" (String.append widthStr "px")
+            , Attr.style "width" <| widthStr ++ "px"
             ] 
             [Svg.Lazy.lazy viewBoard model]
     ]
@@ -295,51 +318,71 @@ viewBody model =
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
     case msg of
-        Start -> 
-            (
-                {model | status = Started}
-                , Cmd.none
-            )
-        Stop -> 
-            (
-                if model.status == Started
-                then {model | status = Stopped}
-                else model
-                , Cmd.none
-            )
-        Generate ->
-            (
-                model
-                , R.generate RandomCells (generateRandomCells (model.world.width*model.world.height))
-            )
-        RandomCells newCells ->
-            (
-                {
-                    status = Generated
-                    , world = 
-                        {
-                            width = model.world.width
-                            , height = model.world.height
-                            , cells = newCells
-                        }
-                    , board = model.board
-                }
-                , Cmd.none
-            )
-        Tick _ ->
-            (
-                if model.status == Started
-                then {model | world = (nextGeneration model.world)}
-                else model
-                , Cmd.none
-            )
-        Step ->
-            (
-                if model.status == Started
-                then {model | status = Stopped}
-                else {model | status = Stopped, world = (nextGeneration model.world)}
-                , Cmd.none
-            )
+        Start -> updateStart model
+        Stop -> updateStop model
+        Generate -> updateGenerate model
+        RandomCells newCells -> updateRandomCells newCells model
+        Tick _ -> updateTick model
+        Step -> updateStep model
+
+updateStart : Model -> (Model, Cmd Msg)
+updateStart model = ({model | status = Started}, Cmd.none)
+
+updateStop : Model -> (Model, Cmd Msg)
+updateStop model = 
+    let
+        newModel = 
+            if model.status == Started 
+            then {model | status = Stopped}
+            else model
+    in
+    (newModel, Cmd.none)
+
+updateGenerate : Model -> (Model, Cmd Msg)
+updateGenerate model = 
+    let
+        cellNum = model.world.width*model.world.height
+        cmdMsg = R.generate RandomCells <| generateRandomCells cellNum
+    in
+    (model, cmdMsg)
+
+updateRandomCells : (A.Array Cell) -> Model -> (Model, Cmd Msg)
+updateRandomCells newCells model =
+    let
+        newWorld = 
+            {
+                width = model.world.width
+                , height = model.world.height
+                , cells = newCells
+            }
+        newModel = 
+            {model | 
+                status = Generated
+                , world = newWorld
+                , board = model.board
+            }
+    in
+    (newModel, Cmd.none)
+
+updateTick : Model -> (Model, Cmd Msg)
+updateTick model =
+    let
+        newModel =
+            if model.status == Started
+            then {model | world = nextGeneration model.world}
+            else model
+    in
+    (newModel, Cmd.none)
+
+updateStep : Model -> (Model, Cmd Msg)
+updateStep model =
+    let
+        newModel =
+            if model.status == Started
+            then {model | status = Stopped}
+            else {model | status = Stopped, world = nextGeneration model.world}
+    in
+    (newModel, Cmd.none)
 
 generateRandomCells : Int -> R.Generator (A.Array Cell)
 generateRandomCells n =
@@ -349,7 +392,7 @@ generateRandomCells n =
 
 -- subscriptions
 subscriptions : Model -> Sub Msg
-subscriptions model = T.every (1000 / 6) Tick
+subscriptions model = T.every (1000 / model.framePerSecond) Tick
 
 -- helpers
 printStatus : Model -> String
