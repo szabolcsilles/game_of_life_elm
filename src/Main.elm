@@ -14,7 +14,7 @@ import List as L
 import Time as T
 import Svg.Lazy
 
-type Msg = Start | Stop | Generate | RandomCells (A.Array Cell) | Tick T.Posix
+type Msg = Start | Stop | Generate | RandomCells (A.Array Cell) | Tick T.Posix | Step
 
 type Status = Started | Stopped | Generated
 
@@ -272,12 +272,14 @@ viewBody model =
             [
             Attr.style "margin-left" "auto"
             , Attr.style "margin-right" "auto"
-            , Attr.style "margin-bottom" "1rem"
+            , Attr.style "margin-bottom" ".5rem"
+            , Attr.style "margin-top" ".2rem"
             , Attr.style "width" (String.append widthStr "px")
             ]
             [
-            button [onClick Generate] [text "Randomize"]
-            , button [onClick Start] [text "Start"]
+            button [Attr.style "margin-right" ".2rem", onClick Generate] [text "Randomize"]
+            , button [Attr.style "margin-right" ".2rem", onClick Start] [text "Start"]
+            , button [Attr.style "margin-right" ".2rem", onClick Step] [text "Step"]
             , button [onClick Stop] [text "Stop"]
             ]
         , div 
@@ -329,6 +331,13 @@ update msg model =
                 if model.status == Started
                 then {model | world = (nextGeneration model.world)}
                 else model
+                , Cmd.none
+            )
+        Step ->
+            (
+                if model.status == Started
+                then {model | status = Stopped}
+                else {model | status = Stopped, world = (nextGeneration model.world)}
                 , Cmd.none
             )
 
