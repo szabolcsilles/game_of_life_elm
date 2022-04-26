@@ -163,10 +163,10 @@ nextGeneration currentGen =
 nextGenerationCells : World -> (A.Array Cell)
 nextGenerationCells currentWorld =
     let
-        cellNum = A.length currentWorld.cells
+        cellNum = currentWorld.width * currentWorld.height
         fateWithCurrentWorld = fate currentWorld
     in
-    List.range 0 cellNum
+    List.range 0 (cellNum - 1)
     |> List.map fateWithCurrentWorld
     |> A.fromList
     
@@ -201,12 +201,13 @@ main = Browser.document {
 init : () -> (Model, Cmd Msg)
 init _ = 
     let
-        xRatio = 18
-        yRatio = 9
-        boardHeight = yRatio * (120 - 20)
+        xRatio = 2
+        yRatio = 1
+        boardHeight = yRatio * 900
         boardWith = round <| xRatio/yRatio * (toFloat boardHeight)
-        worldColumns = xRatio * 10
-        worldRows = yRatio * 10
+        multiplier = 75
+        worldColumns = xRatio * multiplier
+        worldRows = yRatio * multiplier
     in
     (
         {
@@ -245,10 +246,10 @@ viewWorld board world =
     let
         cWidth = cellWidth board world
         cHeight = cellHeight board world
-        cellNum = A.length world.cells
+        cellNum = world.width * world.height
         viewCellWithWorldAndCellSize = viewCellAtIndex world cWidth cHeight
     in
-        List.range 0 cellNum
+        List.range 0 (cellNum - 1)
         |> List.map viewCellWithWorldAndCellSize
 
 
